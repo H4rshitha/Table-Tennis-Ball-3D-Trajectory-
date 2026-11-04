@@ -288,6 +288,60 @@ class TableTennisPipeline:
 
         return pred_spin, pred_pos_3d
 
+    def predict_full(self, images, fps, calibrate=True):
+        '''
+        Run the full end-to-end pipeline and return all intermediate and final outputs.
+        Returns:
+            dict containing:
+                - pred_spin: (3,) spin vector
+                - pred_pos_3d: (N, 3) 3D world trajectory
+                - filtered_ball_positions: (N, 2) valid 2D ball positions
+                - valid_indices_ball: valid frame indices
+                - times_ball: time stamps
+                - raw_ball_positions: raw 2D ball positions from primary detector
+                - raw_ball_positions_aux: raw 2D ball positions from aux detector
+                - raw_table_keypoints: (B, 13, 3) raw table keypoints
+                - filtered_table_keypoints: (13, 3) filtered table keypoints
+                - Mint: (3, 3) camera intrinsic matrix
+                - Mext: (3, 4) camera extrinsic matrix
+                - reprojected_2d: (N, 2) reprojected 2D trajectory
+        '''
+        # 1. Ball Detection
+        image_triples = [(images[i-1].copy(), images[i].copy(), images[i+1].copy()) for i in range(1, len(images)-1)]
+        ball_positions, _ = self.ball_detector.predict(image_triples)
+        ball_positions_aux, _ = self.ball_detector_aux.predict(image_triples)
+        filtered_ball_positions, valid_indices_ball, times_ball = self.ball_detector.filter_trajectory(ball_positions, ball_positions_aux, fps)
+
+        # 2. Table Detection
+        table_keypoints, _ = self.table_detector.predict(images)
+        table_keypoints_aux, _ = self.table_detector_aux.predict(images)
+        filtered_table_keypoints = self.table_detector_aux.filter_trajectory(table_keypoints, table_keypoints_aux)
+
+        # 3. Uplifting
+        ball_coords, table_coords, times, mask = _uplifting_transform(filtered_ball_positions, filtered_table_keypoints, times_ball)
+        pred_spin, pred_pos_3d = self.uplifting_model.predict_without_normalization(ball_coords, table_coords, mask, times)
+
+        Mint, Mext, reprojected_2d = None, None, None
+        if calibrate:
+            Mint, Mext = self.calibrate_camera(filtered_table_keypoints)
+            reprojected_2d = self.reproject(pred_pos_3d, Mint, Mext)
+
+        return {
+            'pred_spin': pred_spin,
+            'pred_pos_3d': pred_pos_3d,
+            'filtered_ball_positions': filtered_ball_positions,
+            'valid_indices_ball': valid_indices_ball,
+            'times_ball': times_ball,
+            'raw_ball_positions': ball_positions,
+            'raw_ball_positions_aux': ball_positions_aux,
+            'raw_table_keypoints': table_keypoints,
+            'filtered_table_keypoints': filtered_table_keypoints,
+            'Mint': Mint,
+            'Mext': Mext,
+            'reprojected_2d': reprojected_2d
+        }
+
+
     def calibrate_camera(self, keypoints):
         '''
         Input:

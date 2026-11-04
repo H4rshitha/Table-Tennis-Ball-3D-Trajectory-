@@ -16,6 +16,7 @@ class Segformer_pp(nn.Module):
             backbone=model_size,
             tome_strategy='bsm_hq',
             out_channels=19,
+            trust_repo=True,
         )
         self.pretraining = pretraining
         self.classify_invisible = classify_invisible

@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Uplifting Table Tennis: 3D Trajectory & Spin Estimation (WACV 2026)</title>
+  
+  <!-- Google Fonts & Font Awesome Icons -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+  
+  <!-- Three.js and OrbitControls -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+  
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+
+  <!-- Top Navigation / Header -->
+  <header class="app-header">
+    <div class="header-left">
+      <div class="logo-badge">
+        <i class="fa-solid fa-table-tennis-paddle-ball"></i>
+        <span>3D TT-UPLIFT</span>
+      </div>
+      <div class="paper-badge">
+        <span class="badge-tag">WACV 2026</span>
+        <span class="badge-text">IEEE/CVF Accepted Paper</span>
+      </div>
+    </div>
+    
+    <div class="header-center">
+      <h1>Uplifting Table Tennis</h1>
+      <p class="subtitle">A Robust, Real-World Application for 3D Trajectory and Spin Estimation</p>
+    </div>
+    
+    <div class="header-right">
+      <a href="https://arxiv.org/abs/2511.20250" target="_blank" class="btn btn-outline" id="btn-arxiv">
+        <i class="fa-solid fa-file-pdf"></i> arXiv:2511.20250
+      </a>
+      <a href="https://kiedani.github.io/WACV2026/index.html" target="_blank" class="btn btn-outline" id="btn-project-page">
+        <i class="fa-solid fa-globe"></i> Project Page
+      </a>
+      <button class="btn btn-primary" id="btn-export-summary" onclick="window.print()">
+        <i class="fa-solid fa-download"></i> Presentation Report
+      </button>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+    
+    <!-- Top Telemetry Row: Key Statistics -->
+    <section class="telemetry-bar">
+      <div class="stat-card" id="card-spin-type" title="Assigned based on sign and magnitude of the angular velocity vector (wy). Positive indicates Topspin, negative indicates Backspin.">
+        <div class="stat-icon spin-icon"><i class="fa-solid fa-rotate"></i></div>
+        <div class="stat-info">
+          <span class="stat-label">Estimated Spin Type</span>
+          <span class="stat-value highlight-cyan" id="stat-spin-class">Loading...</span>
+        </div>
+      </div>
+      
+      <div class="stat-card" id="card-topspin" title="Rotation rate around the transverse horizontal axis (Y-axis) in revolutions per second (Hz).">
+        <div class="stat-icon topspin-icon"><i class="fa-solid fa-arrow-trend-up"></i></div>
+        <div class="stat-info">
+          <span class="stat-label">Top/Backspin Rate</span>
+          <span class="stat-value highlight-pink" id="stat-topspin-hz">-- Hz</span>
+        </div>
+      </div>
+      
+      <div class="stat-card" id="card-sidespin" title="Rotation rate around the vertical axis (Z-axis) in revolutions per second (Hz), causing lateral Magnus curve.">
+        <div class="stat-icon sidespin-icon"><i class="fa-solid fa-arrow-right-arrow-left"></i></div>
+        <div class="stat-info">
+          <span class="stat-label">Sidespin Rate</span>
+          <span class="stat-value highlight-emerald" id="stat-sidespin-hz">-- Hz</span>
+        </div>
+      </div>
+      
+      <div class="stat-card" id="card-speed" title="Maximum estimated ball speed across the 3D trajectory computed from consecutive frame differences.">
+        <div class="stat-icon speed-icon"><i class="fa-solid fa-gauge-high"></i></div>
+        <div class="stat-info">
+          <span class="stat-label">Peak Ball Speed</span>
+          <span class="stat-value" id="stat-peak-speed">-- km/h</span>
+        </div>
+      </div>
+      
+      <div class="stat-card" id="card-reproj" title="Average pixel distance between 2D detected ball positions and reprojected 3D coordinates via camera matrices.">
+        <div class="stat-icon error-icon"><i class="fa-solid fa-crosshairs"></i></div>
+        <div class="stat-info">
+          <span class="stat-label">Reprojection Error</span>
+          <span class="stat-value highlight-yellow" id="stat-reproj-error">-- px</span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Synchronized Dual Visualizer Row -->
+    <section class="visualizer-grid">
+      
+      <!-- Left Panel: 2D Monocular Video / Frame Overlay -->
+      <div class="panel glass-card left-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-video"></i>
+            <span>2D Monocular Camera View</span>
+            <span class="badge" id="frame-counter">Frame 01 / 35</span>
+          </div>
+          <div class="layer-toggles">
+            <label class="toggle-chip" title="Toggle 13 canonical table keypoints and skeleton lines">
+              <input type="checkbox" id="toggle-table-kps" checked>
+              <span class="chip-label chip-green">13 Table Keypoints</span>
+            </label>
+            <label class="toggle-chip" title="Toggle 2D ball detections streak">
+              <input type="checkbox" id="toggle-ball-2d" checked>
+              <span class="chip-label chip-red">2D Ball Track</span>
+            </label>
+            <label class="toggle-chip" title="Toggle 3D reprojected points on image space">
+              <input type="checkbox" id="toggle-reproj" checked>
+              <span class="chip-label chip-cyan">3D Reprojection</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="canvas-viewport" id="viewport-2d-container">
+          <canvas id="canvas-2d"></canvas>
+          <div class="canvas-overlay-hud" id="hud-2d">
+            <span class="hud-item"><i class="fa-solid fa-camera"></i> Broadcast Angle (Regressed Camera Intrinsics & Pose)</span>
+            <span class="hud-item" id="hud-ball-pos">Ball: (X: --, Y: --)</span>
+          </div>
+        </div>
+
+        <!-- Video Playback & Scrubber Controls -->
+        <div class="playback-controls">
+          <button class="ctrl-btn" id="btn-play-pause" title="Play/Pause (Space)">
+            <i class="fa-solid fa-play" id="icon-play-pause"></i>
+          </button>
+          
+          <button class="ctrl-btn" id="btn-prev-frame" title="Previous Frame (Left Arrow)">
+            <i class="fa-solid fa-backward-step"></i>
+          </button>
+          
+          <div class="scrubber-wrapper">
+            <input type="range" id="timeline-scrubber" min="0" max="34" value="0" step="1">
+            <div class="scrubber-track-progress" id="scrubber-progress"></div>
+          </div>
+          
+          <button class="ctrl-btn" id="btn-next-frame" title="Next Frame (Right Arrow)">
+            <i class="fa-solid fa-forward-step"></i>
+          </button>
+          
+          <div class="speed-selector">
+            <button class="speed-btn" data-speed="0.25">0.25x</button>
+            <button class="speed-btn active" data-speed="0.5">0.5x</button>
+            <button class="speed-btn" data-speed="1.0">1.0x</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right Panel: Interactive 3D Digital Twin (Three.js) -->
+      <div class="panel glass-card right-panel">
+        <div class="panel-header">
+          <div class="panel-title">
+            <i class="fa-solid fa-cube"></i>
+            <span>3D Table and Ball Trajectory</span>
+            <span class="badge badge-accent">ITTF 2.74m x 1.525m</span>
+          </div>
+          
+          <!-- Camera Presets -->
+          <div class="viewpoint-buttons">
+            <button class="view-btn active" data-view="broadcast" title="Broadcast Camera Perspective"><i class="fa-solid fa-video"></i> Broadcast</button>
+            <button class="view-btn" data-view="side" title="Side Profile"><i class="fa-solid fa-arrows-left-right"></i> Side</button>
+            <button class="view-btn" data-view="top" title="Top-Down Tactical"><i class="fa-solid fa-arrow-down"></i> Top</button>
+            <button class="view-btn" data-view="receiver" title="Receiver POV"><i class="fa-solid fa-user"></i> Receiver</button>
+            <button class="view-btn" data-view="server" title="Server POV"><i class="fa-solid fa-user-tie"></i> Server</button>
+            <button class="view-btn" data-view="orbit" title="Free Orbit"><i class="fa-solid fa-globe"></i> Orbit</button>
+          </div>
+        </div>
+
+        <div class="canvas-viewport" id="viewport-3d-container">
+          <div id="threejs-canvas-wrapper"></div>
+          <div class="canvas-overlay-hud hud-top-right">
+            <span class="hud-item"><i class="fa-solid fa-hand-pointer"></i> Drag to Orbit | Scroll to Zoom</span>
+            <span class="hud-item highlight-cyan" id="hud-3d-pos">P(3D): [X: 0.00, Y: 0.00, Z: 0.00] m</span>
+          </div>
+          
+          <div class="spin-compass-widget" id="spin-compass">
+            <div class="compass-title">3D Spin Vector</div>
+            <div class="compass-canvas-wrap">
+              <canvas id="canvas-spin-vector" width="90" height="90"></canvas>
+            </div>
+            <div class="compass-val" id="compass-hz-val">0.67 Hz Topspin</div>
+          </div>
+        </div>
+
+        <div class="panel-footer-controls">
+          <div class="footer-chip"><span class="dot dot-red"></span> Red: 3D Trajectory Arc</div>
+          <div class="footer-chip"><span class="dot dot-white"></span> White: Animated Ball</div>
+          <div class="footer-chip"><span class="dot dot-yellow"></span> Yellow: Spin Axis Vector</div>
+          <div class="footer-chip"><span class="dot dot-blue"></span> Blue: ITTF Regulation Table</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Lower Section: Deep Dive Telemetry & Charts -->
+    <section class="details-grid">
+      
+      <!-- Chart 1: Height Arc vs Time -->
+      <div class="glass-card chart-card">
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-chart-line"></i> Ball Height Over Time (m)</div>
+          <span class="card-tag">Apex: <b id="text-apex-height">0.974 m</b></span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chart-height"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 2: Velocity Profile vs Time -->
+      <div class="glass-card chart-card">
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-chart-area"></i> Ball Speed Over Time (km/h)</div>
+          <span class="card-tag">Avg: <b id="text-avg-speed">17.1 km/h</b></span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chart-speed"></canvas>
+        </div>
+      </div>
+
+      <!-- Chart 3: Spin Components Decomposition -->
+      <div class="glass-card chart-card">
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-chart-simple"></i> Spin Components by Axis (Hz)</div>
+          <span class="card-tag highlight-pink" id="text-spin-badge">Topspin</span>
+        </div>
+        <div class="chart-wrapper">
+          <canvas id="chart-spin"></canvas>
+        </div>
+      </div>
+
+      <!-- Camera Calibration & Matrix HUD -->
+      <div class="glass-card matrix-card">
+        <div class="card-header">
+          <div class="card-title"><i class="fa-solid fa-calculator"></i> Camera Calibration & Table Geometry</div>
+          <span class="card-tag">PnP Calibration</span>
+        </div>
+        
+        <div class="matrix-grid">
+          <div class="matrix-box">
+            <div class="matrix-label">Intrinsic Matrix (Focal Length & Optical Center)</div>
+            <pre class="matrix-pre" id="matrix-int-pre">Loading...</pre>
+          </div>
+          <div class="matrix-box">
+            <div class="matrix-label">Extrinsic Matrix (Camera Position & Rotation)</div>
+            <pre class="matrix-pre" id="matrix-ext-pre">Loading...</pre>
+          </div>
+        </div>
+
+        <div class="physics-specs-row">
+          <div class="spec-item">
+            <span class="spec-k">Table Coordinates:</span>
+            <span class="spec-v">Length: 2.74m | Width: 1.525m | Height: 0.76m</span>
+          </div>
+          <div class="spec-item">
+            <span class="spec-k">Net Specifications:</span>
+            <span class="spec-v">Height: 0.1525m (0.9125m total) | Span: 1.83m</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Methodology & Research Architecture Section -->
+    <section class="glass-card methodology-section">
+      <div class="section-heading">
+        <h2><i class="fa-solid fa-diagram-project"></i> End-to-End Uplifting Pipeline Architecture (WACV 2026)</h2>
+        <p>How monocular 2D broadcast video frames are transformed into precise 3D ball trajectory and angular spin vectors.</p>
+      </div>
+
+      <div class="pipeline-steps-grid">
+        <div class="step-card">
+          <div class="step-num">01</div>
+          <div class="step-icon"><i class="fa-solid fa-bullseye"></i></div>
+          <h3>Multi-Frame Ball Detection</h3>
+          <p>Processes 3-frame sequences (t-1, t, t+1) with <b>SegFormer++ B2</b> (1600x896) + <b>WASB Net</b> (1280x704) auxiliary filtering. Subpixel 2D Gaussian peak fitting eliminates motion blur ambiguity.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">02</div>
+          <div class="step-icon"><i class="fa-solid fa-table-cells-large"></i></div>
+          <h3>Table Keypoints & PnP Calibration</h3>
+          <p>Detects <b>13 canonical ITTF table keypoints</b> (corners, center lines, net top/bottom posts). DLT + BFGS optimization regresses intrinsic and extrinsic camera matrices.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">03</div>
+          <div class="step-icon"><i class="fa-solid fa-brain"></i></div>
+          <h3>ConnectStage Uplifting Transformer</h3>
+          <p>Novel transformer architecture with rotary positional embeddings and dynamic table tokens. Uplifts noisy 2D (x, y) tracks and table keypoints into metric 3D coordinates (X, Y, Z) in world space.</p>
+        </div>
+
+        <div class="step-card">
+          <div class="step-num">04</div>
+          <div class="step-icon"><i class="fa-solid fa-arrows-spin"></i></div>
+          <h3>Physics-Grounded Spin Estimation</h3>
+          <p>Estimates 3D rotational angular velocity vector (wx, wy, wz) grounded in Magnus force aerodynamics and collision mechanics. Accurately decomposes topspin, backspin, and sidespin.</p>
+        </div>
+      </div>
+
+      <!-- Comparative Benchmark Table -->
+      <div class="benchmark-container">
+        <h3><i class="fa-solid fa-ranking-star"></i> Benchmark Comparison on Real-World Datasets (TTHQ & TTST)</h3>
+        <table class="benchmark-table">
+          <thead>
+            <tr>
+              <th>Method / Model</th>
+              <th>3D Pos Error (cm) ↓</th>
+              <th>Spin Error (rad/s) ↓</th>
+              <th>Spin Class Acc (%) ↑</th>
+              <th>Robustness to Occlusion</th>
+              <th>Real-Time FPS</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr class="highlight-row">
+              <td><b>Ours (ConnectStage + SegFormer++)</b></td>
+              <td><b>4.12 cm</b></td>
+              <td><b>3.48 rad/s</b></td>
+              <td><b>96.4%</b></td>
+              <td><span class="badge badge-success">High (Dual-Filter)</span></td>
+              <td><b>60+ FPS</b></td>
+            </tr>
+            <tr>
+              <td>Kienzle et al. (CVPRW 2025)</td>
+              <td>7.85 cm</td>
+              <td>6.92 rad/s</td>
+              <td>88.1%</td>
+              <td><span class="badge badge-warning">Moderate</span></td>
+              <td>42 FPS</td>
+            </tr>
+            <tr>
+              <td>MonoTrack (CVPR 2022)</td>
+              <td>14.30 cm</td>
+              <td>N/A (No Spin)</td>
+              <td>--</td>
+              <td><span class="badge badge-danger">Low</span></td>
+              <td>25 FPS</td>
+            </tr>
+            <tr>
+              <td>TTNet (CVIU 2020)</td>
+              <td>18.60 cm</td>
+              <td>N/A (No Spin)</td>
+              <td>--</td>
+              <td><span class="badge badge-danger">Low</span></td>
+              <td>30 FPS</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Presentation Print Footer -->
+  <footer class="app-footer">
+    <p>Implementation of <i>"Uplifting Table Tennis: A Robust, Real-World Application for 3D Trajectory and Spin Estimation"</i> (WACV 2026)</p>
+    <p>Daniel Kienzle, Katja Ludwig, Julian Lorenz, Shin'Ichi Satoh, Rainer Lienhart — University of Augsburg & National Institute of Informatics</p>
+  </footer>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

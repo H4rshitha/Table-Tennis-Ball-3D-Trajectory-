@@ -309,11 +309,12 @@ def _uplifting_transform(ball_coords, table_coords, times):
     return ball_coords, table_coords, times, mask
 
 
-def calibrate_camera(table_coords):
+def calibrate_camera(table_coords, use_ransac=False):
     '''
     Use the detected table keypoints to calibrate the camera and obtain the camera parameters.
     Args:
         table_coords: (13, 3) array of table keypoints (x, y, v)
+        use_ransac: whether to run multi-iteration RANSAC
     Returns:
         M_int: (3, 3) intrinsic camera matrix
         M_ext: (3, 4) extrinsic camera matrix
@@ -324,9 +325,10 @@ def calibrate_camera(table_coords):
         x, y, v = coord
         if v == KEYPOINT_VISIBLE:
             keypoints_dict[i + 1] = [(x, y)]
-    M_int, M_ext, num_inliers = calc_cameramatrices(keypoints_dict, resolution=(WIDTH, HEIGHT), use_lm=False, use_ransac=True, use_prints=False)
+    M_int, M_ext, num_inliers = calc_cameramatrices(keypoints_dict, resolution=(WIDTH, HEIGHT), use_lm=False, use_ransac=use_ransac, use_prints=False)
 
     return M_int, M_ext
+
 
 
 
